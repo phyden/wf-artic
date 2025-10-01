@@ -377,7 +377,7 @@ process nextclade {
 
 process pangolin {
     label "pangolin"
-    cpus 1
+    cpus params.pangolin_threads
     input:
         path "consensus.fasta"
     output:
@@ -390,7 +390,7 @@ process pangolin {
     fi
 
     pangolin --all-versions 2>&1 | sed 's/: /,/' > pangolin.version
-    pangolin $params._pangolin_options consensus.fasta
+    pangolin --threads ${task.cpus} $params._pangolin_options consensus.fasta
     """
 }
 
@@ -400,13 +400,11 @@ process pangolin {
 // decoupling the publish from the process steps.
 process output {
     // publish inputs to output directory
-    label "artic"
-
     publishDir "${params.out_dir}", mode: 'copy', pattern: "*"
     input:
-        file fname
+        file ("*")
     output:
-        file fname
+        path ("*"), includeInputs: true
     """
     echo "Writing output files"
     """
@@ -463,10 +461,10 @@ workflow pipeline {
             pangolin(all_consensus[0])
             software_versions = software_versions.mix(pangolin.out.version,nextclade.out.version)
             // telemetry
-            telemetry_output = telemetry(
-                artic.trimmed_bam.join(artic.pass_vcf).toList().transpose().toList(),
-                primers,
-                reference)
+            //telemetry_output = telemetry(
+            //    artic.trimmed_bam.join(artic.pass_vcf).toList().transpose().toList(),
+            //    primers,
+            //    reference)
             // report
 
             html_doc = report(
@@ -481,14 +479,14 @@ workflow pipeline {
                 software_versions.collect(),
                 workflow_params,
                 all_consensus[0],
-                telemetry_output,
+                pangolin.out.report.collect(), // telemetry_output,
                 // sample_ids
                 samples.map{ it -> it[1]}.toList().map{ it.join(' ')},
                 // sample types
                 samples.map{ it -> it[2]}.toList().map{ it.join(' ')}
                 )
             results = all_consensus[0].concat(
-                telemetry.out.json,
+                //telemetry.out.json,
                 all_consensus[1],
                 all_variants[0].flatten(),
                 clades[0],
@@ -671,5 +669,5 @@ workflow {
 
     results = pipeline(samples, params.scheme_dir, params.scheme_name, params.scheme_version, reference,
         primers, ref_variants, nextclade_dataset, nextclade_data_tag)
-    output(results)
+    output(results.collect())
 }
